@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Черновик карточки товара</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f5f6f8; color: #1d2330; }
+    main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    p.hint { margin: 0 0 16px; color: #5b6475; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .panel { background: #fff; border: 1px solid #dde1e8; border-radius: 8px; padding: 16px; }
+    textarea { width: 100%; box-sizing: border-box; height: 420px; font: 13px/1.45 ui-monospace, monospace; }
+    pre { white-space: pre-wrap; word-break: break-word; font: 13px/1.45 ui-monospace, monospace;
+          background: #f8f9fb; border: 1px solid #e6e9ef; border-radius: 6px; padding: 12px; min-height: 120px; margin: 8px 0 0; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+    button { border: 1px solid #c9ced8; background: #fff; border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 14px; }
+    button.primary { background: #1f5eff; border-color: #1f5eff; color: #fff; }
+    button:disabled { opacity: .6; cursor: progress; }
+    .tabs button.active { background: #1d2330; color: #fff; border-color: #1d2330; }
+    .error { color: #b42318; white-space: pre-wrap; margin-top: 12px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Черновик карточки товара</h1>
+  <p class="hint">Вставьте данные о приборе в JSON: name, manufacturer, specs, description. Технические значения в карточке берутся только из этих данных.</p>
+  <div class="grid">
+    <section class="panel">
+      <textarea id="input" spellcheck="false"></textarea>
+      <div class="row">
+        <button class="primary" id="generate">Сгенерировать</button>
+        <button id="example-full">Пример: манометр</button>
+        <button id="example-gaps">Пример с пропусками</button>
+      </div>
+      <div class="error" id="error"></div>
+    </section>
+    <section class="panel">
+      <div class="row tabs" style="margin-top: 0">
+        <button id="tab-md" class="active">Markdown</button>
+        <button id="tab-json">JSON</button>
+        <button id="copy">Копировать</button>
+        <span id="status"></span>
+      </div>
+      <pre id="output">Здесь появится карточка.</pre>
+    </section>
+  </div>
+</main>
+<script>
+  const examples = {
+    full: {
+      name: "Манометр показывающий DM 02",
+      manufacturer: "Манотомь",
+      specs: {
+        "диапазон измерений": "0–1,6 МПа",
+        "класс точности": "1,5",
+        "присоединение": "G1/2",
+        "диаметр корпуса": "100 мм"
+      },
+      description: "Прибор предназначен для измерения избыточного давления неагрессивных, некристаллизующихся жидкостей, газов и паров."
+    },
+    gaps: {
+      name: "Датчик давления ПД100И-ДИ1,0-111-0,5",
+      manufacturer: "ОВЕН",
+      specs: {
+        "диапазон измерений": "0–1,0 МПа",
+        "выходной сигнал": "4–20 мА",
+        "напряжение питания": "",
+        "степень защиты": ""
+      },
+      description: ""
+    }
+  };
+
+  const $ = (id) => document.getElementById(id);
+  let result = { markdown: "", json: "" };
+  let view = "markdown";
+
+  function setExample(name) {
+    $("input").value = JSON.stringify(examples[name], null, 2);
+  }
+
+  function show() {
+    $("output").textContent = result[view] || "Здесь появится карточка.";
+    $("tab-md").classList.toggle("active", view === "markdown");
+    $("tab-json").classList.toggle("active", view === "json");
+  }
+
+  function formatError(data) {
+    const detail = data && data.detail;
+    if (!detail) return "Неизвестная ошибка";
+    if (typeof detail === "string") return detail;
+    const items = [...(detail.missing || []), ...(detail.errors || [])];
+    return [detail.message || "Ошибка", ...items.map((item) => "• " + item)].join("\n");
+  }
+
+  async function generate() {
+    $("error").textContent = "";
+    let payload;
+    try {
+      payload = JSON.parse($("input").value);
+    } catch (e) {
+      $("error").textContent = "Некорректный JSON: " + e.message;
+      return;
+    }
+    $("generate").disabled = true;
+    $("status").textContent = "Генерация…";
+    try {
+      const response = await fetch("/api/cards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        $("error").textContent = formatError(data);
+        return;
+      }
+      const { markdown, ...card } = data;
+      result = { markdown, json: JSON.stringify(card, null, 2) };
+      show();
+    } catch (e) {
+      $("error").textContent = "Сервис недоступен: " + e.message;
+    } finally {
+      $("generate").disabled = false;
+      $("status").textContent = "";
+    }
+  }
+
+  async function copy() {
+    if (!result[view]) return;
+    await navigator.clipboard.writeText(result[view]);
+    $("status").textContent = "Скопировано";
+    setTimeout(() => { $("status").textContent = ""; }, 1500);
+  }
+
+  $("generate").addEventListener("click", generate);
+  $("example-full").addEventListener("click", () => setExample("full"));
+  $("example-gaps").addEventListener("click", () => setExample("gaps"));
+  $("tab-md").addEventListener("click", () => { view = "markdown"; show(); });
+  $("tab-json").addEventListener("click", () => { view = "json"; show(); });
+  $("copy").addEventListener("click", copy);
+  setExample("full");
+</script>
+</body>
+</html>

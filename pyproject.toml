@@ -1,0 +1,9 @@
+[project]
+name = "product-card-drafts"
+version = "1.0.0"
+description = "Черновики карточек товаров КИП для B2B-магазина с помощью LLM"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
